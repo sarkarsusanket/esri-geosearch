@@ -13,7 +13,7 @@ import torch
 # ------------------------------------------------------------------
 # Layout
 # ------------------------------------------------------------------
-EMBEDDINGS_DIR = rf"/mnt/sdc1/susanket/embeddings"
+EMBEDDINGS_DIR = rf"E:\Data\query-earth\embeddings"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 

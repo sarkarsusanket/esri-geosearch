@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-<title>Esri | Earth Search Engine</title>
+<title>Esri | GeoSearch</title>
 
 <!-- Calcite Design System -->
 <link rel="stylesheet" href="https://js.arcgis.com/calcite-components/3.1.1/calcite.css" />
@@ -354,8 +354,8 @@
     const map = mapEl.map;
     view = mapEl.view;
 
-    resultsLayer = new GraphicsLayer({ title: "Earth Search Engine — results" });
-    supportingLayer = new GraphicsLayer({ title: "Earth Search Engine — why this result" });
+    resultsLayer = new GraphicsLayer({ title: "GeoSearch — results" });
+    supportingLayer = new GraphicsLayer({ title: "GeoSearch — why this result" });
     map.addMany([resultsLayer, supportingLayer]);
 
     refLayer = new VectorTileLayer({
@@ -668,14 +668,14 @@
 
     const features = artifact.geojson?.features;
     if (!features || !features.length){
-      console.warn(`[Earth Search Engine] context artifact "${artifact.id}" ("${artifact.label}") has no geojson features to draw.`, artifact);
+      console.warn(`[GeoSearch] context artifact "${artifact.id}" ("${artifact.label}") has no geojson features to draw.`, artifact);
       return layer;
     }
 
     features.forEach(f => {
       const geom = buildGeometry(f.geometry);
       if (!geom){
-        console.warn(`[Earth Search Engine] could not build a map geometry for a feature of context artifact "${artifact.id}".`, f);
+        console.warn(`[GeoSearch] could not build a map geometry for a feature of context artifact "${artifact.id}".`, f);
         return;
       }
       layer.add(new Graphic({
@@ -753,7 +753,7 @@
 
       const geom = buildGeometry(r.geometry);
       if (!geom) {
-        console.warn(`[Earth Search Engine] result "${r.name}" has no usable geometry — skipped on the map.`, r);
+        console.warn(`[GeoSearch] result "${r.name}" has no usable geometry — skipped on the map.`, r);
         return;
       }
       extentGeometries.push(geom);
@@ -790,7 +790,7 @@
       });
       if (extentGeometries.length){
         view.goTo(extentGeometries, { duration: 700 })
-          .catch(err => console.warn("[Earth Search Engine] view.goTo failed:", err));
+          .catch(err => console.warn("[GeoSearch] view.goTo failed:", err));
       }
     }
   }
@@ -913,7 +913,7 @@
     const grs = [];
     const checkGeom = buildGeometry(check.geometry);
     if (!checkGeom){
-      console.warn(`[Earth Search Engine] "why this result" check "${check.label}" has no geometry to draw.`, check);
+      console.warn(`[GeoSearch] "why this result" check "${check.label}" has no geometry to draw.`, check);
       return;
     }
 
@@ -1035,7 +1035,7 @@
       const data = await resp.json();
       bundle = data.bundle || null;
       if (!bundle) {
-        console.warn('[Earth Search Engine] /api/predict response had no "bundle" field — context layers and "why this result" will be empty. Response keys:', Object.keys(data || {}));
+        console.warn('[GeoSearch] /api/predict response had no "bundle" field — context layers and "why this result" will be empty. Response keys:', Object.keys(data || {}));
       }
       results = geojsonToResults(data.geojson || data);
       

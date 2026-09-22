@@ -145,7 +145,7 @@ class QueryEarth:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="ESRI Earth Search Engine")
+    parser = argparse.ArgumentParser(description="GeoSearch")
     parser.add_argument("-query", type=str, required=True, help="The query to search for")
     args = parser.parse_args()
 
