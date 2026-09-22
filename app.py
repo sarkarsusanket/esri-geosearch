@@ -15,7 +15,7 @@ sys.path.append(r"./src/")
 import queryearth
 import artifacts as artifacts_module
 
-app = FastAPI(title="ESRI Earth Search Engine API")
+app = FastAPI(title="GeoSearch API")
 
 app.add_middleware(
     CORSMiddleware,
