@@ -475,6 +475,25 @@ output = osm(a, "rivers", "waterways")
 Reason:
 Rivers are structured waterway data from OSM.
 
+Query:
+"Find parks in Santa Monica"
+
+Plan:
+a = geocode("Santa Monica")
+output = osm(a, "parks", "pois")
+
+Reason:
+Always remember the supported OSM are pois, waterways, landuse, roads.
+
+
+Query:
+"Find empty lots in LA"
+
+Plan:
+a = geocode("Los Angeles")
+b = vision-low(a, "empty lots")
+output = b
+
 --------------------------------------------------
 
 Query:

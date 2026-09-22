@@ -120,7 +120,9 @@ class TurboQuantSearchIndex:
             crs="EPSG:4326",
         )
         region_ll = region.to_crs("EPSG:4326") if region.crs is not None else region.set_crs("EPSG:4326")
-        region_union = region_ll.geometry.unary_union
+        # Make all geometries valid before union
+        valid_geometries = region_ll.geometry.make_valid()
+        region_union = valid_geometries.unary_union
         exact_mask = pts.within(region_union).values
         return candidate_rows[exact_mask]
 

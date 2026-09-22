@@ -28,6 +28,9 @@ def shapely_overlay(
         elif how == "difference":
             return df1.copy()
 
+    df1.geometry = df1.geometry.make_valid()
+    df2.geometry = df2.geometry.make_valid()
+
     # Align CRSs if they differ
     if df1.crs != df2.crs:
         df2 = df2.to_crs(df1.crs)
@@ -105,6 +108,8 @@ def buffer(gdf: gpd.GeoDataFrame, distance_km: float) -> gpd.GeoDataFrame:
 def add(a: gpd.GeoDataFrame, b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Concatenate two GeoDataFrames' rows together without spatial merging."""
     a, b = ensure_crs(a), ensure_crs(b)
+    a.geometry, b.geometry = a.geometry.make_valid(), b.geometry.make_valid()
+
     if a.empty:
         return b.copy()
     if b.empty:
@@ -117,6 +122,8 @@ def get_centroid(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Calculate and return the centroid for every geometry in `gdf`."""
     if gdf is None or gdf.empty:
         return empty_gdf()
+
+    gdf.geometry = gdf.geometry.make_valid()
 
     gdf = ensure_crs(gdf)
     # Estimate metric CRS for accurate spatial centroid calculation

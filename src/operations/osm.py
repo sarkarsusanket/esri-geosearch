@@ -353,10 +353,9 @@ def search_osm(
     """Search OSM features by mode, term, and bounding region."""
     if mode not in SUPPORTED_MODES:
         print(
-            f"OSM search: unsupported mode '{mode}'. Must be one of"
-            f" {SUPPORTED_MODES}."
+            f"OSM search: unsupported mode '{mode}'. Directing to POI search."
         )
-        return empty_gdf()
+        mode = "pois"
 
     if mode not in osm_data or osm_data[mode] is None or osm_data[mode].empty:
         print(f"OSM search: no data loaded for mode '{mode}'.")
