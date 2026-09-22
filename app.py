@@ -13,6 +13,7 @@ sys.stdout.reconfigure(line_buffering=True)
 
 sys.path.append(r"./src/")
 import queryearth
+import artifacts as artifacts_module
 
 app = FastAPI(title="ESRI Earth Search Engine API")
 
@@ -78,21 +79,31 @@ async def api_predict(req: QueryRequest):
 
     try:
         def _run_find():
-            print(f"[PREDICT] Invoking engine.find('{req.query}')...", flush=True)
-            results_gdf = engine.find(req.query)
-            print(f"[PREDICT] engine.find finished. Found {len(results_gdf) if results_gdf is not None else 0} features.", flush=True)
-            return results_gdf
+            print(f"[PREDICT] Invoking engine.find_with_context('{req.query}')...", flush=True)
+            results_gdf, bundle = engine.find_with_context(req.query)
+            print(f"[PREDICT] engine.find_with_context finished. Found {len(results_gdf) if results_gdf is not None else 0} features.", flush=True)
+            return results_gdf, bundle
 
-        gdf = await run_in_threadpool(_run_find)
+        gdf, bundle = await run_in_threadpool(_run_find)
 
         if gdf is None or gdf.empty:
-            print("[WARN] GeoDataFrame returned by engine.find() is empty.", flush=True)
-            return {"type": "FeatureCollection", "features": []}
+            print("[WARN] GeoDataFrame returned by engine.find_with_context() is empty.", flush=True)
+            return {"type": "FeatureCollection", "features": [], "bundle": None}
 
-        geojson_data = json.loads(gdf.to_json())
-        print(f"[SUCCESS] Returning {len(geojson_data.get('features', []))} GeoJSON features to frontend.", flush=True)
-        return geojson_data
+        # Deduplicate column names if any duplicates exist
+        if gdf.columns.has_duplicates:
+            cols = pd.Series(gdf.columns)
+            for dup in cols[cols.duplicated()].unique():
+                cols[cols == dup] = [f"{dup}_{i}" if i > 0 else dup for i in range((cols == dup).sum())]
+            gdf.columns = cols
 
+        # Convert directly to GeoJSON dict safely without double-serialization
+        geojson_dict = gdf.to_geo_dict()
+        serialized_bundle = artifacts_module.serialize_bundle(bundle)
+        
+        features = geojson_dict.get("features", [])
+        print(f"[SUCCESS] Returning {len(features)} GeoJSON features + bundle to frontend.", flush=True)
+        return {"type": "FeatureCollection", "features": features, "bundle": serialized_bundle}
     except Exception as e:
         print(f"[ERROR] Exception during query prediction: {e}", flush=True)
         import traceback

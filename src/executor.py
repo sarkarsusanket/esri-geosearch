@@ -6,9 +6,27 @@ step against an in-memory variable table, resolving `inputs` references to
 prior steps' outputs as it goes. Every step's result is a GeoDataFrame in
 the standard schema, so tool operations can consume the output of *any*
 prior step regardless of which operation produced it.
+
+Steps run in dependency-topological LEVELS, not plan order: every step
+whose inputs are already resolved runs in the same level, concurrently, via
+a thread pool. Level N+1 only starts once level N has fully resolved.
+Independent branches — e.g. `demo(a, "elderly")`, `osm(a, "hospitals")`,
+`osm(a, "roads")` that only later get ANDed together via intersection — are
+extremely common in router-generated plans (see query_parser.py's few-shot
+examples) and cost `sum(branch latencies)` under strict sequential
+execution for no reason; running same-level steps concurrently turns that
+into `max(branch latencies)` per level. This is safe because steps within
+a level never depend on each other by construction (that's the definition
+of "same level"), each step only touches its own slice of `self.variables`
+by writing to its own `output_variable` key, and the heavy per-step work
+(GPU embedding search, geopandas spatial ops, `requests`-based geocoding)
+all releases the GIL during its actual C/CUDA compute, so threads offer
+real concurrency here despite the GIL — including full parallelism for
+independent network-bound geocode() calls.
 """
 
-from typing import Dict
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List
 
 import geopandas as gpd
 
@@ -20,6 +38,7 @@ from operations import vision as vision_op
 from operations import osm as osm_op
 from operations import change as change_op
 from operations.tool import TOOL_DISPATCH
+from schema import buffer_points_if_needed
 
 
 class PipelineContext:
@@ -67,6 +86,8 @@ class PipelineExecutor:
 
         elif step.operation == "demo":
             region = self._single_input(step)
+            if region is not None:
+                region = buffer_points_if_needed(region)
             result = demo_op.search_demographics(
                 target=params.get("target"),
                 region=region,
@@ -78,9 +99,10 @@ class PipelineExecutor:
 
         elif step.operation == "vision":
             region = self._single_input(step)
+            if region is not None:
+                region = buffer_points_if_needed(region)
             resolution = params.get("resolution")
             time_period = params.get("time")
-            # Resolve year-specific index if time is specified, else use default
             if time_period and time_period in config.VISION_YEARS:
                 year = config.VISION_YEARS[time_period]
                 turbo_index = self.context.vision_year_indices.get(year, {}).get(resolution)
@@ -97,6 +119,8 @@ class PipelineExecutor:
 
         elif step.operation == "osm":
             region = self._single_input(step)
+            if region is not None:
+                region = buffer_points_if_needed(region)
             result = osm_op.search_osm(
                 mode=params.get("osm_mode"),
                 query=params.get("target"),
@@ -106,12 +130,14 @@ class PipelineExecutor:
 
         elif step.operation == "change":
             region = self._single_input(step)
+            if region is not None:
+                region = buffer_points_if_needed(region)
             resolution = params.get("resolution")
             result = change_op.change(
                 query=params.get("target"),
                 from_time=params.get("from_time"),
                 to_time=params.get("to_time"),
-                mode=params.get("mode"),
+                mode=params.get("mode", "new"),
                 region=region,
                 vision_encoder=self.context.vision_encoder,
                 vision_year_indices=self.context.vision_year_indices,
@@ -126,12 +152,13 @@ class PipelineExecutor:
                 f"Unknown operation '{step.operation}' in step {step.step_id}."
             )
 
-        if result is not None and not result.empty and len(result) > config.MAX_RESULTS:
-            result = result.head(config.MAX_RESULTS).copy()
+        # Fallback to empty GeoDataFrame if operation returned None
+        if result is None:
+            result = gpd.GeoDataFrame()
 
         self.variables[step.output_variable] = result
         return result
-
+    
     def _run_tool_step(self, step: PipelineStep) -> gpd.GeoDataFrame:
         action = step.parameters.get("target")
         handler = TOOL_DISPATCH.get(action)
@@ -162,11 +189,58 @@ class PipelineExecutor:
             )
         return handler(inputs[0], inputs[1])
 
+    def _topological_levels(self, plan: QueryPlan) -> List[List[PipelineStep]]:
+        """Group steps into levels: level 0 has no unresolved dependencies,
+        level 1 depends only on level 0's outputs, etc. Steps within a level
+        are mutually independent by construction and can run concurrently."""
+        steps_by_var = {s.output_variable: s for s in plan.steps}
+        resolved = set()
+        remaining = list(plan.steps)
+        levels: List[List[PipelineStep]] = []
+
+        while remaining:
+            ready = [
+                s for s in remaining
+                if all(inp in resolved or inp not in steps_by_var for inp in s.inputs)
+            ]
+            if not ready:
+                # Shouldn't happen for a well-formed DAG (no cycles), but
+                # don't hang forever if the router ever produces one — run
+                # whatever's left in one level instead of looping forever.
+                ready = remaining
+
+            ready_ids = {s.step_id for s in ready}
+            levels.append(ready)
+            resolved.update(s.output_variable for s in ready)
+            remaining = [s for s in remaining if s.step_id not in ready_ids]
+
+        return levels
+
     def run_plan(self, plan: QueryPlan, verbose: bool = True) -> gpd.GeoDataFrame:
-        for step in plan.steps:
-            if verbose:
-                print(f"[step {step.step_id}] {step.operation}")
-            result = self.run_step(step)
-            if verbose:
-                print(f"  -> '{step.output_variable}': {len(result)} feature(s)")
-        return self.variables[plan.final_variable]
+        levels = self._topological_levels(plan)
+        max_workers = max((len(level) for level in levels), default=1)
+
+        with ThreadPoolExecutor(max_workers=max(max_workers, 1)) as pool:
+            for level in levels:
+                if verbose:
+                    names = ", ".join(f"{s.step_id}:{s.operation}" for s in level)
+                    print(f"[level, {len(level)} step(s) in parallel] {names}")
+
+                if len(level) == 1:
+                    # No thread-pool overhead for the (very common) single-
+                    # step level.
+                    self.run_step(level[0])
+                else:
+                    futures = {pool.submit(self.run_step, s): s for s in level}
+                    for future in futures:
+                        future.result()  # re-raises any step's exception here
+
+                if verbose:
+                    for step in level:
+                        result = self.variables[step.output_variable]
+                        print(f"  -> '{step.output_variable}': {len(result)} feature(s)")
+
+        final_result = self.variables[plan.final_variable]
+        if not final_result.empty and len(final_result) > config.MAX_RESULTS:
+            final_result = final_result.head(config.MAX_RESULTS).copy()
+        return final_result

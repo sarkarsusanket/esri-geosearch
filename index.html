@@ -65,7 +65,22 @@
   }
   .qe-search-row calcite-button{ --calcite-button-corner-radius: 0px; margin-top: 4px; }
 
-  .qe-results{ border-top:1px solid #eceff2; max-height:min(46vh, 420px); overflow-y:auto; }
+  /* ---------- loading progress bar ---------- */
+  .qe-progress-bar {
+    width: 100%;
+    height: 3px;
+    background: #e4e4e4;
+    position: relative;
+    overflow: hidden;
+  }
+  .qe-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--qe-ai-violet);
+    transition: width 0.15s ease-out;
+  }
+
+  .qe-results{ border-top:1px solid #eceff2; max-height:min(52vh, 480px); overflow-y:auto; }
   .qe-results-meta{
     display:flex; align-items:center; justify-content:space-between;
     padding:10px 16px 4px; font-size:.78rem; color:#6a6a6a;
@@ -73,6 +88,20 @@
   .qe-empty{ padding:22px 16px 26px; text-align:center; color:#7a7a7a; font-size:.85rem; }
 
   calcite-list-item::part(container){ cursor:pointer; }
+
+  /* ---------- context layer chips ---------- */
+  .qe-context-chips{ padding:6px 16px 8px; display:flex; flex-wrap:wrap; gap:6px; border-top:1px solid #eceff2; }
+  .qe-context-chips:empty{ display:none; }
+  .qe-chip{
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 10px; border-radius:12px; font-size:.72rem; font-weight:500;
+    border:1px solid #c8c8c8; background:#f8f8f8; cursor:pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .qe-chip.active{ background:#e6f0fb; border-color:var(--qe-esri-blue); color:var(--qe-esri-blue); }
+  .qe-chip .qe-chip-dot{
+    width:8px; height:8px; border-radius:50%; flex:none;
+  }
 
   /* ---------- bottom-right wayback time control ---------- */
   .qe-timeline-float{
@@ -138,10 +167,16 @@
           <calcite-button id="runBtn" icon-start="search" disabled>Search</calcite-button>
         </div>
 
+        <!-- ============ Progress Bar ============ -->
+        <div class="qe-progress-bar" id="progressBarWrap" hidden>
+          <div class="qe-progress-fill" id="progressFill"></div>
+        </div>
+
         <div class="qe-results" id="resultsWrap" hidden>
           <div class="qe-results-meta">
             <span id="resultsMeta">—</span>
           </div>
+          <div class="qe-context-chips" id="contextChips"></div>
           <calcite-list id="resultsList" selection-appearance="border" label="ESRI Earth Engine results"></calcite-list>
         </div>
       </div>
@@ -178,15 +213,17 @@
   const resultsWrap = document.getElementById("resultsWrap");
   const resultsMeta = document.getElementById("resultsMeta");
   const resultsList = document.getElementById("resultsList");
+  const contextChips = document.getElementById("contextChips");
   const yearPills   = document.getElementById("yearPills");
   const refToggle   = document.getElementById("refToggle");
   const imageryCaption = document.getElementById("imageryCaption");
   const mapEl       = document.getElementById("mapEl");
+  const progressBarWrap = document.getElementById("progressBarWrap");
+  const progressFill     = document.getElementById("progressFill");
 
   const API_BASE = window.location.origin;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   
-  // Store initialized API key state in memory
   let userApiKey = "";
 
   function typeLine(text, cls){
@@ -203,7 +240,7 @@
   }
 
   // ---------------------------------------------------------------
-  // 1. Boot sequence — call /api/init with user's API Key
+  // 1. Boot sequence
   // ---------------------------------------------------------------
   async function handleInitialization() {
     const key = apiKeyInput.value ? apiKeyInput.value.trim() : "";
@@ -225,7 +262,7 @@
         method: "POST", 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_key: key }),
-        signal: AbortSignal.timeout(600000) // 10 minute timeout for startup
+        signal: AbortSignal.timeout(600000)
       });
 
       if (!resp.ok) {
@@ -253,14 +290,44 @@
   });
 
   // ---------------------------------------------------------------
-  // 2. Map setup — basemap, Wayback historical imagery, reference overlay
+  // 2. Map Setup & Layer Handlers
   // ---------------------------------------------------------------
-  let graphicsLayer, view, waybackLayers = {}, refLayer, Graphic, Point, Polyline, Polygon;
+  let view, waybackLayers = {}, refLayer, Graphic, Point, Polyline, Polygon, GraphicsLayerCtor;
+  let resultsLayer, supportingLayer;
+
+  let currentBundle = null;
+  let contextGraphicsLayers = {};  // artifactId -> real esri GraphicsLayer
+  let supportingGraphics = {};     // featureIdx -> { checkLabel: [Graphic, ...] }
+  let supportingVisible = {};
+  let featureCentroids = [];
+
+  const TYPE_COLORS = {
+    geocode: { fill: [200, 120, 0, 0.25], stroke: [200, 120, 0, 0.85], hex: "#c87800" },
+    demo:    { fill: [0, 122, 194, 0.25], stroke: [0, 122, 194, 0.85], hex: "#007ac2" },
+    vision:  { fill: [34, 139, 87, 0.25], stroke: [34, 139, 87, 0.85], hex: "#228b57" },
+    osm:     { fill: [180, 60, 60, 0.25], stroke: [180, 60, 60, 0.85], hex: "#b43c3c" },
+    change:  { fill: [109, 41, 204, 0.25], stroke: [109, 41, 204, 0.85], hex: "#6d29cc" },
+  };
+
+  const VARIATION_SHADES = [
+    { fill: [0, 122, 194, 0.25], stroke: [0, 122, 194, 0.85] },
+    { fill: [0, 150, 220, 0.25], stroke: [0, 150, 220, 0.85] },
+    { fill: [0, 90, 160, 0.25], stroke: [0, 90, 160, 0.85] },
+    { fill: [60, 160, 210, 0.25], stroke: [60, 160, 210, 0.85] },
+  ];
+
+  const GEOCODE_VARIATION_SHADES = [
+    { fill: [200, 120, 0, 0.25], stroke: [200, 120, 0, 0.85] },
+    { fill: [220, 150, 30, 0.25], stroke: [220, 150, 30, 0.85] },
+    { fill: [170, 100, 0, 0.25], stroke: [170, 100, 0, 0.85] },
+    { fill: [230, 170, 50, 0.25], stroke: [230, 170, 50, 0.85] },
+  ];
 
   function parseDateFromTitle(title){
     const m = /(\d{4}-\d{2}-\d{2})/.exec(title || "");
     return m ? new Date(m[1]) : null;
   }
+
   function nearestByDate(releases, target){
     return releases.reduce((best, r) =>
       Math.abs(r.date - target) < Math.abs(best.date - target) ? r : best
@@ -268,7 +335,7 @@
   }
 
   async function setupMap(){
-    const [WebTileLayer, VectorTileLayer, GraphicsLayer, GraphicMod, PointMod, PolylineMod, PolygonMod, Measurement] = await $arcgis.import([
+    const [WebTileLayer, VectorTileLayer, GraphicsLayer, GraphicMod, PointMod, PolylineMod, PolygonMod] = await $arcgis.import([
       "esri/layers/WebTileLayer",
       "esri/layers/VectorTileLayer",
       "esri/layers/GraphicsLayer",
@@ -276,24 +343,20 @@
       "esri/geometry/Point",
       "esri/geometry/Polyline",
       "esri/geometry/Polygon",
-      "esri/widgets/Measurement",
     ]);
+
     Graphic = GraphicMod;
     Point = PointMod;
     Polyline = PolylineMod;
     Polygon = PolygonMod;
+    GraphicsLayerCtor = GraphicsLayer;
 
     const map = mapEl.map;
     view = mapEl.view;
 
-    const measurementWidget = new Measurement({
-      view: view,
-      position: "top-right",
-    });
-    view.ui.add(measurementWidget, "top-right");
-
-    graphicsLayer = new GraphicsLayer({ title: "QueryEarth results" });
-    map.add(graphicsLayer);
+    resultsLayer = new GraphicsLayer({ title: "Earth Search Engine — results" });
+    supportingLayer = new GraphicsLayer({ title: "Earth Search Engine — why this result" });
+    map.addMany([resultsLayer, supportingLayer]);
 
     refLayer = new VectorTileLayer({
       portalItem: { id: "30d6b8271e1849cd9c3042060001f425" },
@@ -328,8 +391,6 @@
         }
         imageryCaption.textContent = `Showing current map · Wayback back to ${picks["2014"].date.toISOString().slice(0,10)}`;
         refToggle.disabled = false;
-      } else {
-        throw new Error("no releases parsed");
       }
     } catch (err) {
       console.warn("Wayback imagery unavailable:", err);
@@ -338,6 +399,13 @@
       });
       imageryCaption.textContent = "Historical imagery needs network access to Esri tile services.";
     }
+  }
+
+  function bringSearchLayersToFront(){
+    const map = mapEl.map;
+    Object.values(contextGraphicsLayers).forEach(layer => map.reorder(layer, map.layers.length - 1));
+    if (resultsLayer) map.reorder(resultsLayer, map.layers.length - 1);
+    if (supportingLayer) map.reorder(supportingLayer, map.layers.length - 1);
   }
 
   function selectYear(year){
@@ -349,10 +417,7 @@
     const baseLayer = mapEl.map?.basemap?.baseLayers?.getItemAt?.(0);
     if (baseLayer) baseLayer.visible = (year === "none");
     Object.entries(waybackLayers).forEach(([key, layer]) => { layer.visible = (key === year); });
-
-    if (graphicsLayer) {
-      mapEl.map.reorder(graphicsLayer, mapEl.map.layers.length - 1);
-    }
+    bringSearchLayersToFront();
   }
 
   yearPills.querySelectorAll(".qe-year-pill").forEach(btn => {
@@ -364,7 +429,7 @@
   });
 
   // ---------------------------------------------------------------
-  // 3. Search — calls /api/predict
+  // 3. Search Data Conversions & Feature Symbolizers
   // ---------------------------------------------------------------
   function geojsonToResults(gj){
     if (!gj || !gj.features) return [];
@@ -396,7 +461,7 @@
 
       return {
         name: f.properties?.name || f.properties?.title || f.properties?.LABEL || f.properties?.id || `Feature ${idx + 1}`,
-        cat: f.properties?.category || f.properties?.type || f.properties?.CLASS || "Model Output",
+        cat: f.properties?.category || f.properties?.type || f.properties?.CLASS || "Why this result?",
         lon: lon ?? -121.95,
         lat: lat ?? 37.42,
         score: f.properties?.score ?? f.properties?.confidence ?? 1.0,
@@ -426,41 +491,240 @@
     return null;
   }
 
-  function buildSymbol(geojsonGeom, isTop) {
+  function buildSymbol(geojsonGeom, isTop, colorOverride) {
     const type = geojsonGeom?.type;
     const fillColor = isTop ? [109, 41, 204, 0.35] : [0, 122, 194, 0.30];
-    const lineColor = isTop ? [109, 41, 204, 0.9] : [0, 122, 194, 0.85];
+    const lineColor = isTop ? [138, 43, 226, 1.0] : [0, 112, 224, 1.0];
 
     if (type === "LineString" || type === "MultiLineString") {
       return {
         type: "simple-line",
-        color: lineColor,
+        color: colorOverride || lineColor,
         width: isTop ? 4 : 3,
         style: "solid",
       };
     } else if (type === "Polygon" || type === "MultiPolygon") {
       return {
         type: "simple-fill",
-        color: fillColor,
-        outline: { color: lineColor, width: 2 },
+        color: colorOverride || fillColor,
+        outline: { color: colorOverride || lineColor, width: 2 },
         style: "solid",
       };
     }
     return {
       type: "simple-marker",
       style: "circle",
-      color: isTop ? [109, 41, 204, 0.9] : [0, 122, 194, 0.85],
+      color: colorOverride || (isTop ? [109, 41, 204, 0.9] : [0, 122, 194, 0.85]),
       size: isTop ? 13 : 10,
       outline: { color: "#ffffff", width: 1.5 },
     };
   }
 
-  function renderResults(query, results){
+  function buildContextSymbol(geojsonGeom, color) {
+    const type = geojsonGeom?.type;
+    const fill = color.fill;
+    const stroke = color.stroke;
+    if (type === "LineString" || type === "MultiLineString") {
+      return { type: "simple-line", color: stroke, width: 2.5, style: "dash" };
+    } else if (type === "Polygon" || type === "MultiPolygon") {
+      return { type: "simple-fill", color: fill, outline: { color: stroke, width: 1.5 }, style: "solid" };
+    }
+    return { type: "simple-marker", style: "circle", color: stroke, size: 9, outline: { color: "#fff", width: 1 } };
+  }
+
+  function buildSupportingSymbol(geojsonGeom, color) {
+    const type = geojsonGeom?.type;
+    const stroke = color.stroke;
+    if (type === "LineString" || type === "MultiLineString") {
+      return { type: "simple-line", color: stroke, width: 2.5, style: "short-dash" };
+    } else if (type === "Polygon" || type === "MultiPolygon") {
+      return { type: "simple-fill", color: [...stroke.slice(0,3), 0.20], outline: { color: stroke, width: 2, style: "dash" }, style: "solid" };
+    }
+    return { type: "simple-marker", style: "diamond", color: stroke, size: 12, outline: { color: "#fff", width: 1.5 } };
+  }
+
+  // Helper to calculate the closest point on a line segment to a point
+  function getClosestPointOnSegment(p, a, b) {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    if (dx === 0 && dy === 0) return a;
+    let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy);
+    t = Math.max(0, Math.min(1, t));
+    return [a[0] + t * dx, a[1] + t * dy];
+  }
+
+  // Helper to calculate closest point on a LineString / MultiLineString to a target Point
+  function getClosestPointOnLine(pt, coordinates, type) {
+    let minSqDist = Infinity;
+    let closestPt = pt;
+
+    const lines = type === "LineString" ? [coordinates] : coordinates;
+    lines.forEach(line => {
+      for (let i = 0; i < line.length - 1; i++) {
+        const segPt = getClosestPointOnSegment(pt, line[i], line[i + 1]);
+        const sqDist = Math.pow(pt[0] - segPt[0], 2) + Math.pow(pt[1] - segPt[1], 2);
+        if (sqDist < minSqDist) {
+          minSqDist = sqDist;
+          closestPt = segPt;
+        }
+      }
+    });
+    return closestPt;
+  }
+
+  // Helper to calculate centroid of a Polygon / MultiPolygon
+  function getPolygonCentroid(coordinates, type) {
+    let ring = [];
+    if (type === "Polygon") {
+      ring = coordinates[0];
+    } else if (type === "MultiPolygon") {
+      ring = coordinates[0][0];
+    }
+    if (!ring || !ring.length) return [0, 0];
+
+    let area = 0, cx = 0, cy = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      const p1 = ring[i];
+      const p2 = ring[i + 1];
+      const f = (p1[0] * p2[1] - p2[0] * p1[1]);
+      area += f;
+      cx += (p1[0] + p2[0]) * f;
+      cy += (p1[1] + p2[1]) * f;
+    }
+    area = area * 0.5;
+    if (area === 0) return ring[0];
+    return [cx / (6 * area), cy / (6 * area)];
+  }
+
+  function getGeoJsonCenter(geojsonGeom, refPoint) {
+    if (!geojsonGeom) return null;
+    const type = geojsonGeom.type;
+    const c = geojsonGeom.coordinates;
+
+    if (type === "Point") {
+      return c;
+    }
+    if (type === "LineString" || type === "MultiLineString") {
+      return refPoint ? getClosestPointOnLine(refPoint, c, type) : c[0];
+    }
+    if (type === "Polygon" || type === "MultiPolygon") {
+      return getPolygonCentroid(c, type);
+    }
+    return null;
+  }
+
+  function buildConnectionLine(fromGeom, toGeom) {
+    if (!fromGeom || !toGeom) return null;
+
+    let fromPt, toPt;
+
+    if (fromGeom.type === "Point") {
+      fromPt = getGeoJsonCenter(fromGeom);
+      toPt = getGeoJsonCenter(toGeom, fromPt);
+    } else if (toGeom.type === "Point") {
+      toPt = getGeoJsonCenter(toGeom);
+      fromPt = getGeoJsonCenter(fromGeom, toPt);
+    } else {
+      fromPt = getGeoJsonCenter(fromGeom);
+      toPt = getGeoJsonCenter(toGeom);
+    }
+
+    if (!fromPt || !toPt) return null;
+    return new Polyline({
+      paths: [[fromPt, toPt]],
+      spatialReference: { wkid: 4326 },
+    });
+  }
+
+  function getLayerColor(artifact, typeCounts) {
+    const baseType = artifact.type?.split(":")[0] || artifact.type;
+    const base = TYPE_COLORS[baseType] || { fill: [100,100,100,0.25], stroke: [100,100,100,0.85], hex: "#666" };
+
+    const count = typeCounts[baseType] || 0;
+    typeCounts[baseType] = count + 1;
+
+    if (count === 0) return { fill: base.fill, stroke: base.stroke, hex: base.hex };
+
+    const shades = baseType === "geocode" ? GEOCODE_VARIATION_SHADES : VARIATION_SHADES;
+    const v = shades[count % shades.length] || shades[0];
+    const hex = `#${v.stroke.slice(0,3).map(c => c.toString(16).padStart(2,"0")).join("")}`;
+    return { fill: v.fill, stroke: v.stroke, hex };
+  }
+
+  // ---------------------------------------------------------------
+  // 4. Context & Supporting Feature Display Handlers
+  // ---------------------------------------------------------------
+  function clearContextLayers(){
+    const map = mapEl.map;
+    Object.values(contextGraphicsLayers).forEach(layer => map.remove(layer));
+    contextGraphicsLayers = {};
+  }
+
+  function buildContextLayer(artifact, color){
+    const layer = new GraphicsLayerCtor({
+      title: `Context — ${artifact.label}`,
+      visible: artifact.default_visible !== false,
+    });
+
+    const features = artifact.geojson?.features;
+    if (!features || !features.length){
+      console.warn(`[Earth Search Engine] context artifact "${artifact.id}" ("${artifact.label}") has no geojson features to draw.`, artifact);
+      return layer;
+    }
+
+    features.forEach(f => {
+      const geom = buildGeometry(f.geometry);
+      if (!geom){
+        console.warn(`[Earth Search Engine] could not build a map geometry for a feature of context artifact "${artifact.id}".`, f);
+        return;
+      }
+      layer.add(new Graphic({
+        geometry: geom,
+        symbol: buildContextSymbol(f.geometry, color),
+        attributes: { name: artifact.label, contextLayer: true, artifactId: artifact.id },
+      }));
+    });
+
+    return layer;
+  }
+
+  function renderContextChips(bundle) {
+    contextChips.innerHTML = "";
+    clearContextLayers();
+    if (!bundle?.context?.length) return;
+
+    const typeCounts = {};
+    const newLayers = [];
+
+    bundle.context.forEach(art => {
+      const color = getLayerColor(art, typeCounts);
+      const layer = buildContextLayer(art, color);
+      contextGraphicsLayers[art.id] = layer;
+      newLayers.push(layer);
+
+      const chip = document.createElement("span");
+      chip.className = "qe-chip" + (layer.visible ? " active" : "");
+      chip.innerHTML = `<span class="qe-chip-dot" style="background:${color.hex}"></span>${art.label}`;
+      chip.addEventListener("click", () => {
+        layer.visible = !layer.visible;
+        chip.classList.toggle("active", layer.visible);
+      });
+      contextChips.appendChild(chip);
+    });
+
+    mapEl.map.addMany(newLayers);
+    bringSearchLayersToFront();
+  }
+
+  function renderResults(query, results, bundle){
     resultsWrap.hidden = false;
     resultsList.innerHTML = "";
-    graphicsLayer.removeAll();
-
-    mapEl.map.reorder(graphicsLayer, mapEl.map.layers.length - 1);
+    resultsLayer.removeAll();
+    supportingLayer.removeAll();
+    supportingGraphics = {};
+    supportingVisible = {};
+    featureCentroids = [];
+    currentBundle = bundle;
 
     if (!results.length){
       resultsMeta.textContent = `No matches for "${query}"`;
@@ -468,10 +732,17 @@
       empty.className = "qe-empty";
       empty.textContent = "Our Search Engine couldn't find a match. The feature doesn't exist in the area.";
       resultsList.appendChild(empty);
+      contextChips.innerHTML = "";
+      clearContextLayers();
       return;
     }
 
     resultsMeta.textContent = `${results.length} result${results.length === 1 ? "" : "s"} for "${query}"`;
+
+    renderContextChips(bundle);
+
+    const featureChecks = bundle?.features || [];
+    const extentGeometries = [];
 
     results.forEach((r, idx) => {
       const item = document.createElement("calcite-list-item");
@@ -481,22 +752,191 @@
       resultsList.appendChild(item);
 
       const geom = buildGeometry(r.geometry);
-      if (!geom) return;
+      if (!geom) {
+        console.warn(`[Earth Search Engine] result "${r.name}" has no usable geometry — skipped on the map.`, r);
+        return;
+      }
+      extentGeometries.push(geom);
 
-      graphicsLayer.add(new Graphic({
+      const center = geom?.extent?.center || (r.geometry?.type === "Point" ? { longitude: r.lon, latitude: r.lat } : null);
+      if (center) {
+        featureCentroids[idx] = [center.longitude ?? r.lon, center.latitude ?? r.lat];
+      }
+
+      const featData = featureChecks[idx] || null;
+
+      const graphic = new Graphic({
         geometry: geom,
         symbol: buildSymbol(r.geometry, idx === 0),
-        attributes: { name: r.name, cat: r.cat },
+        attributes: { name: r.name, cat: r.cat, featureIndex: idx },
         popupTemplate: {
           title: "{name}",
-          content: `${r.cat}`,
+          content: () => buildPopupContent(r.cat, featData, idx),
         },
-      }));
+      });
+      graphic._featData = featData;
+      graphic._resultGeom = r.geometry;
+      graphic._resultIdx = idx;
+      resultsLayer.add(graphic);
     });
 
-    if (view && results.length){
-      view.goTo(results.map(r => [r.lon, r.lat]), { duration: 700 }).catch(() => {});
+    if (view){
+      bundle?.context?.forEach(art => {
+        if (art.default_visible === false) return;
+        art.geojson?.features?.forEach(f => {
+          const g = buildGeometry(f.geometry);
+          if (g) extentGeometries.push(g);
+        });
+      });
+      if (extentGeometries.length){
+        view.goTo(extentGeometries, { duration: 700 })
+          .catch(err => console.warn("[Earth Search Engine] view.goTo failed:", err));
+      }
     }
+  }
+
+  function applyPillStyle(pill, isActive, hasGeom) {
+    const bg = isActive ? "#e6f0fb" : "#f5f5f5";
+    const border = isActive ? "#007ac2" : "#d8d8d8";
+    const textColor = isActive ? "#007ac2" : "#333333";
+    pill.style.cssText = `display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:500;border:1px solid ${border};background:${bg};color:${textColor};cursor:${hasGeom ? "pointer" : "default"};opacity:${hasGeom ? "1" : "0.6"};user-select:none;margin-bottom:4px;`;
+  }
+
+  function buildPopupContent(cat, featData, featureIdx) {
+    const container = document.createElement("div");
+    container.style.cssText = "font-size:13px;color:#333;max-width:320px;font-family:sans-serif;";
+
+    const catEl = document.createElement("div");
+    catEl.style.cssText = "margin-bottom:8px;color:#6a6a6a;font-size:12px;font-weight:500;";
+    catEl.textContent = cat;
+    container.appendChild(catEl);
+
+    if (!featData?.checks?.length) {
+      const empty = document.createElement("div");
+      empty.style.cssText = "font-size:11px;color:#888;";
+      empty.textContent = "No spatial validation parameters recorded.";
+      container.appendChild(empty);
+      return container;
+    }
+
+    const pillsWrap = document.createElement("div");
+    pillsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;";
+
+    featData.checks.forEach((check, ci) => {
+      const hasGeom = !!check.geometry;
+      const isActive = !!(supportingVisible[featureIdx]?.[check.label]);
+
+      const pill = document.createElement("span");
+      pill.dataset.fi = String(featureIdx);
+      pill.dataset.ci = String(ci);
+      applyPillStyle(pill, isActive, hasGeom);
+      pill.title = check.detail || check.label;
+
+      const dot = document.createElement("span");
+      dot.style.cssText = `width:7px;height:7px;border-radius:50%;flex:none;background:${check.passed ? "#22863a" : "#cb2431"};`;
+      pill.appendChild(dot);
+
+      const label = document.createElement("span");
+      label.textContent = check.label;
+      pill.appendChild(label);
+
+      if (check.detail) {
+        const detail = document.createElement("span");
+        detail.style.cssText = "font-size:10px;opacity:0.75;margin-left:2px;";
+        detail.textContent = `(${check.detail})`;
+        pill.appendChild(detail);
+      }
+
+      if (hasGeom) {
+        pill.addEventListener("click", () => {
+          supportingVisible[featureIdx] = supportingVisible[featureIdx] || {};
+          const nowVisible = !supportingVisible[featureIdx][check.label];
+          supportingVisible[featureIdx][check.label] = nowVisible;
+          applyPillStyle(pill, nowVisible, true);
+
+          const resultGeom = findResultGeometry(featureIdx);
+          toggleSupportingFeature(featureIdx, check, resultGeom);
+        });
+      }
+
+      pillsWrap.appendChild(pill);
+    });
+
+    container.appendChild(pillsWrap);
+    return container;
+  }
+
+  function findResultGeometry(featureIdx) {
+    const g = resultsLayer?.graphics?.find(gr => gr.attributes?.featureIndex === featureIdx);
+    if (!g?.geometry) return null;
+    const geom = g.geometry;
+    if (geom.type === "point") {
+      return { type: "Point", coordinates: [geom.longitude, geom.latitude] };
+    }
+    if (geom.type === "polyline" && geom.paths?.length) {
+      return { type: "LineString", coordinates: geom.paths[0] };
+    }
+    if (geom.type === "polygon" && geom.rings?.length) {
+      return { type: "Polygon", coordinates: geom.rings };
+    }
+    return null;
+  }
+
+  const SUPPORTING_PALETTE = [
+    { fill: [220, 80, 60, 0.18], stroke: [220, 80, 60, 0.9] },
+    { fill: [30, 140, 80, 0.18],  stroke: [30, 140, 80, 0.9] },
+    { fill: [200, 140, 0, 0.18],  stroke: [200, 140, 0, 0.9] },
+    { fill: [100, 80, 200, 0.18], stroke: [100, 80, 200, 0.9] },
+    { fill: [0, 160, 200, 0.18],  stroke: [0, 160, 200, 0.9] },
+    { fill: [200, 50, 150, 0.18], stroke: [200, 50, 150, 0.9] },
+  ];
+
+  function supportingColorFor(label) {
+    let h = 0;
+    for (let i = 0; i < label.length; i++) { h = ((h << 5) - h + label.charCodeAt(i)) | 0; }
+    return SUPPORTING_PALETTE[Math.abs(h) % SUPPORTING_PALETTE.length];
+  }
+
+  function toggleSupportingFeature(featureIdx, check, featureGeometry) {
+    const isVisible = supportingVisible[featureIdx]?.[check.label];
+
+    if (!supportingGraphics[featureIdx]) supportingGraphics[featureIdx] = {};
+    const existing = supportingGraphics[featureIdx][check.label];
+
+    if (existing) {
+      existing.forEach(g => { g.visible = isVisible; });
+      return;
+    }
+
+    if (!isVisible || !supportingLayer) return;
+
+    const grs = [];
+    const checkGeom = buildGeometry(check.geometry);
+    if (!checkGeom){
+      console.warn(`[Earth Search Engine] "why this result" check "${check.label}" has no geometry to draw.`, check);
+      return;
+    }
+
+    const color = supportingColorFor(check.label);
+
+    grs.push(new Graphic({
+      geometry: checkGeom,
+      symbol: buildSupportingSymbol(check.geometry, color),
+      attributes: { name: check.label, supporting: true },
+      popupTemplate: { title: check.label, content: check.detail || "" },
+    }));
+
+    const line = buildConnectionLine(featureGeometry, check.geometry);
+    if (line) {
+      grs.push(new Graphic({
+        geometry: line,
+        symbol: { type: "simple-line", color: [...color.stroke.slice(0,3), 0.6], width: 1.5, style: "short-dash" },
+        attributes: { name: `Connection to ${check.label}`, supporting: true },
+      }));
+    }
+
+    supportingGraphics[featureIdx][check.label] = grs;
+    grs.forEach(g => supportingLayer.add(g));
   }
 
   function focusResult(r){
@@ -506,14 +946,58 @@
       const geom = buildGeometry(r.geometry);
       if (geom) {
         view.goTo({ target: geom, zoom: 15 }, { duration: 600 });
-        const g = graphicsLayer.graphics.find(gr => gr.attributes?.name === r.name);
+        const g = resultsLayer.graphics.find(gr => gr.attributes?.name === r.name);
         if (g) view.openPopup({ features: [g], location: geom.extent?.center || g.geometry });
         return;
       }
     }
     view.goTo({ center: [r.lon, r.lat], zoom: 15 }, { duration: 600 });
-    const g = graphicsLayer.graphics.find(gr => gr.attributes?.name === r.name);
+    const g = resultsLayer.graphics.find(gr => gr.attributes?.name === r.name);
     if (g) view.openPopup({ features: [g], location: g.geometry });
+  }
+
+  // ---------------------------------------------------------------
+  // Simulated Loading Progress Controller
+  // ---------------------------------------------------------------
+  let progressTimer = null;
+
+  function startSimulatedProgress() {
+    if (progressTimer) clearInterval(progressTimer);
+    
+    progressBarWrap.hidden = false;
+    progressFill.style.transition = "width 0.15s ease-out";
+    progressFill.style.width = "0%";
+    
+    let currentPercent = 0;
+    const intervalMs = 100;
+    const totalTargetMs = 10000;
+    const steps = totalTargetMs / intervalMs;
+    const targetPercent = 80;
+    const baseIncrement = targetPercent / steps;
+
+    progressTimer = setInterval(() => {
+      if (currentPercent < targetPercent) {
+        // Add pseudo-random variations to make progress feel natural
+        const jitter = (Math.random() * 0.8) + 0.6;
+        currentPercent += baseIncrement * jitter;
+        if (currentPercent > targetPercent) currentPercent = targetPercent;
+      }
+      progressFill.style.width = `${currentPercent}%`;
+    }, intervalMs);
+  }
+
+  function finishSimulatedProgress() {
+    return new Promise(resolve => {
+      if (progressTimer) clearInterval(progressTimer);
+      progressFill.style.transition = "width 0.25s ease-in-out";
+      progressFill.style.width = "100%";
+      
+      setTimeout(() => {
+        progressBarWrap.hidden = true;
+        progressFill.style.width = "0%";
+        resolve();
+      }, 300);
+    });
   }
 
   async function runQuery(query){
@@ -526,8 +1010,12 @@
     resultsWrap.hidden = false;
     resultsMeta.textContent = "Searching spatial database...";
     resultsList.innerHTML = "";
+    contextChips.innerHTML = "";
+
+    startSimulatedProgress();
 
     let results = [];
+    let bundle = null;
     try {
       const resp = await fetch(`${API_BASE}/api/predict`, {
           method: 'POST',
@@ -536,7 +1024,7 @@
               query: q,
               api_key: userApiKey
           }),
-          signal: AbortSignal.timeout(600000) // 10 minute timeout for prediction execution
+          signal: AbortSignal.timeout(600000)
       });
 
       if (!resp.ok) {
@@ -545,17 +1033,23 @@
       }
 
       const data = await resp.json();
-      results = geojsonToResults(data);
+      bundle = data.bundle || null;
+      if (!bundle) {
+        console.warn('[Earth Search Engine] /api/predict response had no "bundle" field — context layers and "why this result" will be empty. Response keys:', Object.keys(data || {}));
+      }
+      results = geojsonToResults(data.geojson || data);
       
       if (results.length === 0) {
-        console.warn("GeoDataFrame was returned empty by qe.find()");
+        console.warn("GeoDataFrame returned empty by query engine");
       }
     } catch (err) {
       console.error("API Prediction Failed! Reason:", err);
       alert(`Query failed: ${err.message}`);
+    } finally {
+      await finishSimulatedProgress();
     }
 
-    renderResults(q, results);
+    renderResults(q, results, bundle);
     runBtn.loading = false;
     runBtn.disabled = false;
   }

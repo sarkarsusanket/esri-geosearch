@@ -28,17 +28,31 @@ def search_demographics(target: Optional[str],
     candidate_embeddings = ae_embeddings
 
     if region is not None and not region.empty:
-        region_union = region.geometry.unary_union
-        mask = demo_gdf.geometry.intersects(region_union)
-        if mask.any():
-            mask_indices = np.where(mask)[0]
+        # Ensure region contains valid Polygon / MultiPolygon geometries before taking unary_union
+        polygons = region.geometry[region.geometry.type.isin(["Polygon", "MultiPolygon"])]
+        if not polygons.empty:
+            region_union = polygons.unary_union
+        else:
+            # Fallback to buffer(0) or original unary_union if type filtering isn't enough
+            region_union = region.geometry.unary_union.buffer(0)
+
+        # Convert GeometryCollection to MultiPolygon if unary_union produced mixed types
+        if region_union.geom_type == "GeometryCollection":
+            from shapely.geometry import MultiPolygon
+            poly_list = [g for g in region_union.geoms if g.geom_type in ["Polygon", "MultiPolygon"]]
+            region_union = MultiPolygon(poly_list) if poly_list else region_union
+
+        # Spatial-index-accelerated candidate lookup
+        mask_indices = demo_gdf.sindex.query(region_union, predicate="intersects")
+        if len(mask_indices) > 0:
             masked_gdf = demo_gdf.iloc[mask_indices].copy().reset_index(drop=True)
             masked_embeddings = ae_embeddings[mask_indices]
+            
+            # Perform clip on the filtered region_union
             candidates = gpd.clip(masked_gdf, region_union)
             candidate_embeddings = masked_embeddings[candidates.index.to_numpy()]
         else:
             print("Demographic layer does not intersect the given region; searching globally instead.")
-
     if not target:
         result = candidates.copy()
         if SCORE_COL not in result.columns:

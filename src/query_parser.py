@@ -34,7 +34,7 @@ SUPPORTED_OPERATIONS = {"geocode", "demo", "vision", "tool", "osm", "change"}
 SUPPORTED_TOOL_ACTIONS = {"buffer", "union", "intersection", "difference", "add", "get_centroid"}
 SUPPORTED_RESOLUTIONS = set(config.VISION_INDEX_DIRS.keys())
 SUPPORTED_TIME_PERIODS = set(config.VISION_YEARS.keys())
-SUPPORTED_CHANGE_MODES = {"new", "removed", "increased", "decreased"}
+SUPPORTED_CHANGE_MODES = {"new", "removed"}
 
 ROUTER_SYSTEM_PROMPT = """
 You are the QueryEarth geospatial query planner.
@@ -97,29 +97,13 @@ The query supports comma-separated values for multi-term search. For example, os
 
 Available modes and what they contain:
 - "roads":      road types (primary, secondary, motorway, residential, footway, cycleway, etc.)[the "primary", "secondary" and "tertiary" are types of highways]
-                The options available: ['service', 'motorway', 'residential', 'track', 'tertiary', 'primary', 'primary_link', 'secondary', 'motorway_link', 'unclassified', 'busway', 'trunk', 'secondary_link', 'steps', 'footway', 'cycleway', 'trunk_link', 'path', 'living_street', 'pedestrian', 'tertiary_link', 'bridleway', 'road', 'residential_link', 'minor', 'turning_loop', 'corridor', 'elevator', 'emergency_bay', 'bus_stop', 'service;path', 'escape', 'disused', 'bus_guideway', 'via_ferrata', 'crossing', 'traffic_island', 'passing_place', 'scramble', 'footpath', 'ladder', 'turning_circle', 'footway:abandoned']
+                The options available: ['service', 'motorway',  'track', 'tertiary', 'primary', 'primary_link', 'secondary', 'motorway_link', 'unclassified', 'busway',  'secondary_link','cycleway','pedestrian', 'tertiary_link', 'road']
 
 - "waterways":  waterway types 
-                Options: ['confluence', 'weir', 'floodgate', 'waterfall', 'sanitary_dump_station', 'dam', 'lock_gate', 'fuel', 'rapids', 'dock', 'pumping_station', 'stream_end', 'ditch', 'switch', 'surge_tank', 'flow_control', 'access_point', 'bend', 'sluice_gate', 'bay', 'yes', 'water_point', 'drain', 'turning_point', 'boat_lift', 'cascade', 'stream', 'fairway', 'boatyard', 'valve', 'tidal_channel', 'flume', 'flowline', 'debris_screen', 'canal', 'pressurised', 'river', 'check_dam', 'artificial', 'duct', 'wadi', 'floating_barrier', 'fish_pass', 'wash', 'derelict_canal', 'construction', 'link', 'drystream', 
-                'pressurized', 'fish_screen', 'spillway', 'vadi']
-
-- "buildings":  building footprints with optional amenity type and name
-                Categories: ['library', 'toilets', 'pharmacy', 'bank', 'social_facility', 'police', 'grave_yard', 'place_of_worship', 'arts_centre', 'theatre', 'fast_food', 'community_centre', 'flight_school', 'clock', 'clinic', 'conference_centre', 'fuel', 'post_office', 'post_depot', 'social_centre', 'restaurant', 'courthouse', 'events_venue', 'fire_station', 'car_rental', 'doctors', 'casino', 'school', 'townhall', 'university', 'ranger_station', 'cinema', 'recycling', 'dentist', 'studio', 'mortuary', 'waste_transfer_station', 'car_wash', 'marketplace', 'cafe', 'childcare', 'commercial', 'nursing_home', 
-                'nightclub', 'fixme', 'motel', 'planetarium', 'research_institute', 'bar', 'pub', 'events_centre', 'ice_cream', 'dojo', 'amphitheatre', 'prison', 'mountain_rescue', 'money_transfer', 'veterinary', 'language_school', 'bicycle_rental', 'daycare', 'food_court', 'stripclub', 'love_hotel', 'dressing_room', 'locker', 'vehicle_inspection', 'hospital', 'concert_hall', 'bench', 'public_building', 'exhibition_centre', 'animal_shelter', 'college', 'shelter', 'kindergarten', 'music_school', 'training', 'music_venue', 'senior_center', 'spa', 'fuel;car_wash', 'art_school', 'fraternity', 'mausoleum', 'dancing_school', 'prep_school', 'cold_storage', 'public_facility', 'security_booth', 'bus_station', 'animal_boarding', 'social_club', 'art_gallery', 'bureau_de_change', 'canteen', 
-                'urgent_care', 'storage', 'ski_school', 'stroller_parking', 'bicycle_parking', 'clubhouse', 'ferry_terminal', 'assisted_living;skilled_nursing_facility', 'boat_storage', 'boat_rental', 'shower', 'first_aid', 'sign', 'parcel_locker', 'food', 'fountain', 'crematorium', 'water_slide', 'social_club;events_venue', 'mailroom', 'coworking_space', 'snack_stand', 'public', 'atm', 'amphitheater', 'laundry', 'museum', 'office', 'payment_terminal', 'waste_disposal', 'snack_cart', 'stage', 'bank;fire_station;fast_food', 'motorcycle_rental', 'water tank', 'monastery', 'doctors;school', 'biergarten', 'music_rehearsal_place', 
-                'mortuary;crematory', 'swingerclub', 'dive_centre', 'trade_school', 'sperm_bank', 'stable', 'meditation_centre', 'railway', 'vending_machine', 'karaoke_box', 'cruise_terminal', 'tattoo', 'framing', 'reception_desk', 'healthcare', 'antiques', 'public_bath', 'boat_sharing', 'open_air_stage', 'vacant', 'gambling', 'Casitas Del Sol', 'health_club', 'charging_station', 'kindergarden', 'security_control', 'information', 'laundry_room;mail_box;gym', 'wedding_chapel', 'orthodontist', 'parking_entrance', 'palmist', 'ski_rental', 'check_cashing', 'bbq', 'surface', 'event', 'towing', 'dispatch_center', 'coffee', 'ticket_booth', 'animal_training', 'convention_centre', 'apartment', 'event_hall', 'crypt', 'funeral_hall', 'field_shelter', 'sun_shelter', 'main theater', 
-                'practice rooms', 'driving_school', 'social_facility;nursing_home', 'vacuum_cleaner', 'animal_breeding', 'yes', 'parking_space', 'smoking_area', 'post_box', 'undertaker', 'crematory_services', 'senior housing', 'disused', 'payment_centre', 'letter_box', 'place_of_mourning', 'meditation_center', 'restaurant;cafe', 'hookah_lounge', 'gas', 'fast_food;bicycle_rental', 'public_bookcase', 'workshop', 'concession_stand', 'kitchen', 'reception_point', 'checkpoint', 'retirement_home', 'Insurance Brokerage', 'tutoring_centre', 'brothel', 'Aviation Laboratory', 'pizza_oven', 'taxi', 'psychic', 'polling_station', 'surf_school', 
-                'bus_stop;bus_station', 'Vacation Rental', 'sanitary_dump_station', 'warehouse', 'shelter;fuel', 'telephone', 'food_court;restaurant', 'gazebo', 'cabana', 'registration', 'reception', 'egg-laying', 'event_center', 'place_of_worship;monastery', 'tool_library', 'school;place_of_worship', 'cafe;fuel']
+                Options: ['waterfall', 'dam','stream','canal','river','artificial']
 
 - "landuse":    land-use classifications
-                the available classes to search from: ['industrial', 'construction', 'railway', 'farmland', 'orchard', 'commercial', 'retail', 'residential', 'quarry', 'cemetery', 'recreation_ground', 'greenfield', 'basin', 'grass', 'allotments', 'reservoir', 'demolished:recreation_ground', 'brownfield', 'farmyard', 'institutional', 'forest', 'farm', 'landfill', 'religious', 'military', 'education', 'village_green', 'meadow', 'vineyard', 'salt_pond', 'fairground', 'residential;monument;historic_site', 'ranch', 'plant_nursery', 'foreign_trade_zone', 'greenhouse_horticulture', 'public', 'utility', 'government', 'telescope', 
-                'special_use', 'public_facility', 'prisons', 'civic_admin', 'railway;commercial', 'winter_sports', 'recreation_ground;landuse=fairground', 'nature reserve', 'traffic_island', 'nature_reserve', 'observatory', 'garages', 'civil', 'commercial;retail', 'aquaculture', 'animal_keeping', 'corral', 'nursery', 'shrubland', 'salt_desert', 'municipial', 'depot', 'civic', 'weigh_station', 'flowerbed', 'logistics', 'temp', 'transportation', 'ruins', 'wasteland', 'dirt', 'greenery', 'oilfield', 'oil_field', 'public_building', 'water_storage', 'storage', 'quad', 'conservation', 'vacant', 'gravel', 'pasture', 'desert', 
-                'community_food_growing', 'apiary', 'yes', 'nature', 'moving_building', 'disused:industrial', 'Maintenance Area', 'civic_services', 'judicial', 'community garden', 'open_space', 'civic_safety', 'training_area', 'harbour', 'airfield', 'highway', 'transport', 'garden', 'park', 'proposed', 'cerro', 'civic_service', 'Storm Drain overflow basin', 'sand', 'turf', 'recreation', 'homeless camp', 'unknown', 'paddleboat', 'public facility', 'radio', 'eduation', 'Luch Tables', 'unpatented_mining_claim', 'paved', 'school', 'mixed', 'private', 'parking', 'shrubs', 'tourism', 'wholesale', 'healthcare', 'putting green', 
-                'rail', 'special use', 'easement', 'mine', 'tree_pit', 'scrub', 'lodging', 'orchard;vineyard', 'governmental', 'public_works', 'sign', 'rangeland', 'commercial;residential', 'facility']
-
-- "natural":    natural features 
-                Categories: ['saddle', 'volcano', 'cave_entrance', 'stone', 'peak', 'tree', 'spring', 'cliff', 'rock', 'hot_spring', 'cape', 'wood', 'bay', 'arch', 'rock_formation', 'beach', 'water', 'crater', 'geyser', 'sinkhole', 'hill', 'slope', 'heath', 'wetland', 'desert', 'plateau', 'tree_stump', 'grassland', 'valley', 'point', 'scrub', 'scree', 'canyon', 'ridge', 'dune', 'yes', 'bush', 'ravine', 'grove', 'mountain_range', 'shrub', 'flat', 'wildflowers', 'succulent_plant', 'cactus', 'flowering_plant', 'bare_rock', 'geothermal_area', 'cirque', 'plant', 'landform', 'birds_nest', 'peninsula', 'mesa', 'grass', 'butte', 
-                'basin', 'stump', 'sediment', 'hills', 'plain', 'depression', 'cave', 'caldera', 'fumarole', 'agave', 'coastline', 'shingle', 'reef', 'sand', 'mud', 'fell', 'shrubbery', 'wadi', 'dry wash', 'strait', 'glacier', 'knoll', 'gully', 'gorge', 'dry_wash', 'shoal', 'tree_row', 'mountain_basin', 'lava', 'fault', 'range', 'landslide', 'shrubland', 'arete', 'meadow', 'tree_group', 'land', 'boulder', 'dry_lake', 'ground', 'soil', 'earth_bank', 'greenery', 'lake', 'dirt', 'floodplain', 'anthill', 'trees', 'forest', 'blowout', 'desert_pavement', 'massif', 'marsh', 'gulch', 'shoreline', 'fissure', 'rocks', 'transform_fault', 'feature', 'playa', 'water;wetland']
+                the available classes to search from: ['industrial', 'construction', 'commercial', 'residential', 'military', "conservation"]
 
 - "pois":       points of interest with amenity type and name
                 Category examples: (restaurant, school, hospital, bank, etc.) You could search and find out ig.
@@ -130,16 +114,12 @@ Examples:
 - osm("rivers", "waterways") - find rivers (keyword match)
 - osm("hospitals", "pois") - find hospitals (keyword match)
 - osm("residential", "landuse") - find residential land use (keyword match)
-- osm("forest", "natural") - find natural forests (keyword match)
-- osm(a, "restaurants", "buildings") - find restaurant buildings in region a
 
 Use OSM when the query is about:
 - Specific road/highway types (primary, motorway, footway, etc.)
 - Water features (rivers, streams, canals, dams)
 - Land-use patterns (residential, commercial, industrial, farmland)
-- Natural features (peaks, beaches, forests, cliffs)
 - Named businesses or facilities (with amenity type)
-- Building types or specific named buildings
 
 IMPORTANT: OSM is for structured categorical data. Use it when the user asks about a specific class or type of geographic feature that exists in OpenStreetMap data.
 
@@ -210,15 +190,20 @@ Use the time parameter only when the user explicitly asks about a specific time 
 
 --------------------------------------------------
 
-7. change-low(region?, query, from_time, to_time, mode)
+7. change-low(region?, query, from_time, to_time, mode?)
 
 Detect changes in LARGE physical features and land-use patterns between two
 time periods, using lower-resolution imagery.
 
 Arguments:
+- query: 1 or 2 queries (comma-separated like "forests,buildings" or separate strings)
+  - 1 query: searches for that query in both time periods
+  - 2 queries: searches for first query in from_time, second in to_time
 - from_time: one of "past" (2014), "recent" (2020), "present" (2026)
 - to_time: one of "past" (2014), "recent" (2020), "present" (2026)
-- mode: one of "new", "removed", "increased", "decreased"
+- mode (optional): "new" (default) or "removed"
+  - "new": finds features that APPEARED (not in from_time, but in to_time)
+  - "removed": finds features that DISAPPEARED (in from_time, but not in to_time)
 
 Use change-low when detecting change in LARGE features such as:
 - forests cleared or new farmland
@@ -234,22 +219,28 @@ Think:
 by comparing two aerial images?"
 
 Examples:
-- "Where were forests cleared between 2014 and 2026?"
-- "What areas became urbanized from recent to present?"
-- "Find new large parking lots since 2014"
-- "Where has farmland increased from past to recent?"
+- "Where were forests cleared between 2014 and 2026?" -> change-low("forests", "past", "present", "removed")
+- "What areas became urbanized from recent to present?" -> change-low("urban", "recent", "present", "new")
+- "Find new large parking lots since 2014" -> change-low("parking lots", "past", "present", "new")
+- "Where has farmland increased from past to recent?" -> change-low("farmland", "past", "recent", "new")
+- "Find places where forest was replaced by buildings" -> change-low("forests,buildings", "past", "present")
 
 --------------------------------------------------
 
-8. change-high(region?, query, from_time, to_time, mode)
+8. change-high(region?, query, from_time, to_time, mode?)
 
 Detect changes in SMALLER, FINE-GRAINED visual features between two
 time periods, using high-resolution imagery.
 
 Arguments:
+- query: 1 or 2 queries (comma-separated like "forests,buildings" or separate strings)
+  - 1 query: searches for that query in both time periods
+  - 2 queries: searches for first query in from_time, second in to_time
 - from_time: one of "past" (2014), "recent" (2020), "present" (2026)
 - to_time: one of "past" (2014), "recent" (2020), "present" (2026)
-- mode: one of "new", "removed", "increased", "decreased"
+- mode (optional): "new" (default) or "removed"
+  - "new": finds features that APPEARED (not in from_time, but in to_time)
+  - "removed": finds features that DISAPPEARED (in from_time, but not in to_time)
 
 Use change-high when detecting change in SMALL features such as:
 - new swimming pools
@@ -268,6 +259,7 @@ Examples:
 - "Find new solar panels since 2014 (past)"
 - "What buildings were constructed from recent to present?"
 - "Where have rooftops changed between past and present?"
+- "Find places where small structures replaced gardens" -> change-high("gardens,structures", "past", "present")
 
 --------------------------------------------------
 
@@ -284,7 +276,6 @@ When the user says "over the last decade" or "long-term change", use from_time="
 When the user specifies exact years, map them to the nearest time period.
 
 The query describes WHAT to look for. The from_time/to_time describe WHEN.
-The mode describes the DIRECTION of change.
 
 ==================================================
 IMPORTANT: OSM vs VISION ROUTING
@@ -293,25 +284,25 @@ IMPORTANT: OSM vs VISION ROUTING
 The key distinction is between STRUCTURED DATA and VISUAL APPEARANCE.
 
 OSM provides STRUCTURED categorical data from OpenStreetMap:
-- Road types, waterway types, land-use classes, natural feature types
+- Road types, waterway types, land-use classes
 - Named places with amenity categories
 - This is EXACT categorical data, not visual detection
 
 VISION provides VISUAL appearance from satellite/aerial imagery:
 - Color, texture, material, physical shape
 - Things you can SEE in an image but are not in any database
-- "red buildings", "buildings with solar pools", "large warehouses"
+- "large warehouses", "red structures", "swimming pools"
 
 ROUTING RULES:
 - "primary highways" -> osm("primary", "roads") [structured road data]
 - "highways" -> osm("primary, secondary, tertiary", "roads") [all major highway types in one call]
 - "rivers" -> osm("rivers", "waterways") [structured waterway data]
 - "residential areas" -> osm("residential", "landuse") [structured landuse data]
-- "forests" -> osm("forest", "natural") [structured natural feature data]
 - "hospitals" -> osm("hospitals", "pois") 
 - "red buildings" -> vision-high("red buildings") [visual appearance]
 - "swimming pools" -> vision-high("swimming pools") [visual detection]
 - "large parking lots" -> vision-low("large parking lots") [visual detection]
+- "parking lots" -> should be routed to both the vision-low and the pois.
 - "baseball fields" -> vision-high("baseball fields") [visual detection]
 - "wealthy neighborhoods" -> demo("wealthy neighborhoods") [demographic data]
 
@@ -333,7 +324,7 @@ Examples:
 
 - baseball fields -> vision-high (visual detection)
 - basketball courts -> vision-high (visual detection)
-- parking lots -> vision-low (visual detection)
+- parking lots -> vision-low (visual detection) + pois
 - swimming pools -> vision-high (visual detection)
 - golf courses -> vision-low (visual detection)
 - airports -> osm("airports", "pois")
@@ -343,7 +334,6 @@ Examples:
 - red buildings -> vision-high (visual appearance)
 - primary roads -> osm("primary", "roads") (structured data)
 - rivers -> osm("rivers", "waterways") (structured data)
-- forests -> osm("forest", "natural") (structured data)
 
 The correct choice depends on the user's intent.
 
@@ -360,7 +350,7 @@ Use POI when the user specifically wants listed/business places.
 -> demo + osm("hospitals", "pois").
 
 "Find large hospitals surrounded by parking lots"
--> osm("hospitals", "pois") for hospitals, and vision-low for parking lots.
+-> osm("hospitals", "pois") for hospitals, and osm("parking lots", "pois") for parking lots.
 
 When two modalities answer complementary parts of the same request, use both.
 
@@ -411,7 +401,7 @@ For every query:
 3. Determine what kind of information each concept represents:
    - geographic place
    - demographic/statistical property
-   - structured OSM category (road type, waterway type, landuse, natural feature)
+   - structured OSM category (road type, waterway type, landuse)
    - large physical object/land-use pattern (visual)
    - small/fine physical object (visual)
 4. Determine the appropriate modality for each concept.
@@ -436,7 +426,7 @@ IMPORTANT INTENT RULES
 "population", "households", "income", "poverty", "age", "unemployment", "density", "education", "hurricanes", "areas with high AQI"
 -> strongly favor demo when they describe geographic/demographic properties.
 
-"road types", "highway classification", "waterway network", "land use classification", "natural features"
+"road types", "highway classification", "waterway network", "land use classification"
 -> strongly favor osm.
 
 Words such as "field", "pool", "parking lot", "airport", "hospital", "school", etc. MUST NOT automatically determine the modality. Interpret the complete request.
@@ -485,6 +475,40 @@ output = osm(a, "rivers", "waterways")
 Reason:
 Rivers are structured waterway data from OSM.
 
+Query:
+"Find parks in Santa Monica"
+
+Plan:
+a = geocode("Santa Monica")
+output = osm(a, "parks", "pois")
+
+Reason:
+Always remember the supported OSM are pois, waterways, landuse, roads.
+
+
+Query:
+"Find empty lots in LA"
+
+Plan:
+a = geocode("Los Angeles")
+b = vision-low(a, "empty lots")
+output = b
+
+--------------------------------------------------
+
+Query:
+"Find illegal-looking new construction inside protected wildlife areas."
+
+Plan:
+a = osm("forests,protected area,conservation", "landuse")
+c = change-high(a, "construction", "past", "present", "new")
+d = buffer(c, 8.04672)
+e = vision-high(d, "illegal construction")
+output = e
+
+Reason:
+Pay importance to the attributes, and the hacky ways in which you can refine change detect outputs (like done here with the whole buffereing and then viswion high)
+
 --------------------------------------------------
 
 Query:
@@ -509,7 +533,7 @@ b = osm(a, "fire_station", "pois")
 c = buffer(b, 1.60934)
 d = demo(a, "wildfire prone areas")
 e = intersection(c, d)
-output = change-high(e, "buildings", "recent", "present", "new")
+output = change-high(e, "buildings", "recent", "present")
 
 --------------------------------------------------
 
@@ -538,23 +562,27 @@ Hospitals are OSM POI data; elderly residents is demographic.
 --------------------------------------------------
 
 Query:
+"Find police stations and hospitals in Phoenix"
+
+Plan:
+a = geocode("Phoenix")
+b = osm(a, "police", "pois")
+c = osm(a, "hospital", "pois")
+output = add(b, c)
+
+Reason:
+Here a add is required not a union, as you just wanna add them two not union, as no geometric op is required.
+
+--------------------------------------------------
+
+
+Query:
 "Find me places which used to be foests but now have buildings or residetials in LA."
 
 Plan:
 a = geocode("Los Angeles")
-b = vision-high(a, "forests", "past")
-c = buffer(b, 0.2)
-d = vision-high(a, "buildings", "present")
-e = buffer(d, 0.2)
-output = intersection(b, d)
-
-Reason:
-We didn't go the change detection path here because change detection will only allow us to detect changes of 
-a particular entity. But here the user wanted the difference of places, the places which went from forest to 
-buildings. So we utilize the year functionality of Vision High to first search the forests in past years and 
-buildings in present years and notice how we do a buffer of 0.2 because 200 meter is the resolution of the 
-Vision High imagery, and then we find out the intersection between the two C and E. There will be user queries 
-which will be complicated and which needs some thoughts like this.
+b = change-high(a, "forests,buildings", "past", "present")
+output = b
 
 --------------------------------------------------
 
@@ -562,18 +590,29 @@ Query:
 "Find areas where new buildings appeared recently"
 
 Plan:
-a = change-high("buildings", "recent", "present", "new")
+a = change-high("buildings", "recent", "present")
 output = a
 
 Reason:
 This is a change-detection query. Also be mindful, just bescause the user asks for new buildings doesnt men you havr yo pass new buildings to the change (vision) search. The viison search is a vlm, and if you search for "new builidngs" as opposed to "buildings" you might get wrong answers.
 
 Query:
+"Find areas where forest cover has decreased over this decade"
+
+Plan:
+a = change-high("forests", "present", "past", "removed")
+output = a
+
+Reason:
+This is a change-detection query. The change is now asking for what has removed hence the from time = present, and to time = past
+
+
+Query:
 "Find new construction in Los Angeles since 2014"
 
 Plan:
 a = geocode("Los Angeles")
-output = change-low(a, "construction", "past", "present", "new")
+output = change-low(a, "construction", "past", "present")
 
 Reason:
 The query asks about what was built (new construction) since 2014 (past) to now (present). Again be ware or what you are asking the viison searh.
@@ -624,7 +663,7 @@ Query:
 Plan:
 a = demo("low-income communities")
 b = demo(a, "high unemployment")
-c = change-low(b, "large industrial facilities", "past", "present", "new")
+c = change-low(b, "large industrial facilities", "past", "present")
 d = osm(b, "major highways", "roads")
 e = buffer(d, 5)
 f = osm(b, "fire stations", "pois")
@@ -634,6 +673,22 @@ i = difference(c, h)
 j = intersection(i, e)
 k = intersection(j, g)
 output = vision-high(k, "rooftop solar panels")
+
+--------------------------------------------------
+
+Query:
+"Find illegal-looking new construction inside protected wildlife areas."
+
+Plan:
+a = vision-low("forests")
+c = change-high(a, "construction", "past", "present", "new")
+d = buffer(c, 8.04672)
+e = vision-high(d, "illegal construction")
+output = e
+
+Reason:
+Pay importance to the attributes, and the hacky ways in which you can refine change detect outputs (like done here with the whole buffereing and then viswion high)
+
 
 
 ==================================================
@@ -650,9 +705,9 @@ vision-high(region?, query, time?)
 
 vision-low(region?, query, time?)
 
-change-low(region?, query, from_time, to_time, mode)
+change-low(region?, query, from_time, to_time, mode?)
 
-change-high(region?, query, from_time, to_time, mode)
+change-high(region?, query, from_time, to_time, mode?)
 
 buffer(region, km)
 
@@ -700,9 +755,7 @@ OSM MODES REFERENCE
 
 roads:      highway column - primary, secondary, tertiary, motorway, residential, footway, cycleway, path, service, track, etc.
 waterways:  waterway column - river, stream, canal, dam, waterfall, dock, drain, ditch, etc.
-buildings:  amenity column + name - generic buildings or named businesses
 landuse:    landuse column - residential, commercial, industrial, farm, forest, grass, farmland, etc.
-natural:    natural column - peak, beach, forest, bay, cliff, desert, heath, marsh, sand, etc.
 pois:       amenity column + name - restaurant, school, hospital, bank, pharmacy, cafe, etc.
 
 ==================================================
@@ -774,7 +827,7 @@ class PipelineStep:
             self.parameters["resolution"] = resolution
             from_time = self.parameters.get("from_time")
             to_time = self.parameters.get("to_time")
-            mode = self.parameters.get("mode")
+            mode = self.parameters.get("mode", "new")
             if from_time not in SUPPORTED_TIME_PERIODS:
                 raise ValueError(
                     f"Unsupported from_time '{from_time}' in step {self.step_id}. "
@@ -852,9 +905,9 @@ _FUZZ_MAX_ARGS = {
     ("demo", None): 2,
     ("osm", None): 4,
     ("vision", None): 3,
-    ("change", None): 5,
-    ("change", "high"): 5,
-    ("change", "low"): 5,
+    ("change", None): 6,
+    ("change", "high"): 6,
+    ("change", "low"): 6,
     ("tool", "buffer"): 2,
     ("tool", "get_centroid"): 1,
 }
@@ -1000,19 +1053,53 @@ def _parse_dsl_line(line: str, step_id: int) -> PipelineStep:
         inputs = []
 
     elif operation == "change":
-        # change(region?, query, from_time, to_time, mode)
-        # The LLM may quote time/mode ("past", "new") so they land in
+        # change(region?, query, from_time, to_time, mode?) or
+        # change(region?, query1, query2, from_time, to_time, mode?)
+        # The LLM may quote time/mode ("past", "present", "new", "removed") so they land in
         # text_args, or leave them bare so they land in var_args.
-        # Strategy: pull region from var_args (if any), then consume the
-        # remaining text_args as query + from_time + to_time + mode.
-        if len(text_args) < 4:
+        # Strategy: pull region from var_args (if any), then find the
+        # time periods and mode from text_args, and use remaining text_args as query/queries.
+        if len(text_args) < 3:
             raise ValueError(
-                f"change() needs query, from_time, to_time, mode as strings: {line!r}"
+                f"change() needs query, from_time, to_time as strings: {line!r}"
             )
-        parameters["target"] = text_args[0]
-        parameters["from_time"] = text_args[1]
-        parameters["to_time"] = text_args[2]
-        parameters["mode"] = text_args[3]
+        
+        # Find which text_args are time periods or mode
+        time_args = [i for i, arg in enumerate(text_args) if arg.lower() in SUPPORTED_TIME_PERIODS]
+        mode_args = [i for i, arg in enumerate(text_args) if arg.lower() in SUPPORTED_CHANGE_MODES]
+        
+        if len(time_args) < 2:
+            raise ValueError(
+                f"change() needs at least 2 time period arguments (from_time, to_time): {line!r}"
+            )
+        
+        # The last two time args are from_time and to_time
+        from_time_idx = time_args[-2]
+        to_time_idx = time_args[-1]
+        
+        # Mode is optional, defaults to "new"
+        if mode_args:
+            mode_idx = mode_args[0]
+            parameters["mode"] = text_args[mode_idx].lower()
+        else:
+            parameters["mode"] = "new"
+        
+        # Everything before from_time_idx is query(s)
+        query_args = text_args[:from_time_idx]
+        
+        if len(query_args) == 0:
+            raise ValueError(
+                f"change() needs at least one query string: {line!r}"
+            )
+        elif len(query_args) == 1:
+            # Single query - check for comma separation
+            parameters["target"] = query_args[0]
+        else:
+            # Multiple queries - join with comma for the parser
+            parameters["target"] = ",".join(query_args)
+        
+        parameters["from_time"] = text_args[from_time_idx]
+        parameters["to_time"] = text_args[to_time_idx]
         inputs = var_args[:1] if var_args else []
 
     elif operation == "demo":
@@ -1177,6 +1264,17 @@ def _ensure_genai():
     if _genai_client is not None:
         return
     _genai_client = genai.Client()
+    _create_router_cache()
+
+
+def _create_router_cache():
+    """(Re)create the cached system instruction. The cache has a 1-hour TTL
+    (Google's minimum-billing-friendly window) — for a server that stays up
+    longer than that, the cached_content reference goes stale and Google's
+    API rejects it. Call this both on first init and again whenever a
+    cached-content request comes back with an error, so the cache silently
+    refreshes instead of taking every query down after an hour of uptime."""
+    global _router_cache
     try:
         _router_cache = _genai_client.caches.create(
             model="gemini-3.1-flash-lite",
@@ -1190,19 +1288,43 @@ def _ensure_genai():
 
 def router_lm(user_query: str):
     _ensure_genai()
-    if _router_cache is not None:
+
+    def _uncached_call():
+        return _genai_client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            config={"system_instruction": ROUTER_SYSTEM_PROMPT},
+            contents=f"QUERY: {user_query}",
+        )
+
+    if _router_cache is None:
+        return _uncached_call().text
+
+    try:
         response = _genai_client.models.generate_content(
             model="gemini-3.1-flash-lite",
             config={"cached_content": _router_cache.name},
             contents=f"QUERY: {user_query}",
         )
-    else:
-        response = _genai_client.models.generate_content(
-            model="gemini-3.1-flash-lite",
-            config={"system_instruction": ROUTER_SYSTEM_PROMPT},
-            contents=f"QUERY: {user_query}",
-        )
-    return response.text
+        return response.text
+    except Exception as e:
+        # Most likely cause: the cache's 1-hour TTL expired mid-session.
+        # Refresh it once and retry via the (now-fresh) cache; if that
+        # somehow fails too, fall through to an uncached call so this
+        # single query still succeeds rather than taking the whole router
+        # down until a restart.
+        print(f"[router] Cached-content call failed ({e}); refreshing cache and retrying.")
+        _create_router_cache()
+        if _router_cache is not None:
+            try:
+                response = _genai_client.models.generate_content(
+                    model="gemini-3.1-flash-lite",
+                    config={"cached_content": _router_cache.name},
+                    contents=f"QUERY: {user_query}",
+                )
+                return response.text
+            except Exception as e2:
+                print(f"[router] Retry with refreshed cache also failed ({e2}); falling back to uncached call.")
+        return _uncached_call().text
 
 def parse_query(user_query: str) -> QueryPlan:
     """Parse a natural-language geospatial query into an executable QueryPlan."""

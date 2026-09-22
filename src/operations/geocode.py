@@ -1,49 +1,18 @@
 """
-Geocoding: resolve a place name to a bounding-box polygon.
+Geocoding: resolve a place name to its administrative boundary polygon
+(falling back to a bounding box), via Nominatim with an Esri fallback.
 
-NOTE: this is the one remaining network dependency in the pipeline (calls
-Nominatim's public geocoding API). If you need fully offline operation,
-swap this for a local gazetteer/offline geocoder — everything downstream
-(demo/vision/tool) is already fully local.
+Results are cached in-process by normalized place name (functools.lru_cache
+on _geocode_cached): geocode() sits on the critical path of nearly every
+query, place names repeat constantly both across queries in a session and
+across independent branches of the same multi-filter plan, and a repeat
+lookup has no reason to pay for another network round trip.
 """
+import functools
 
-# import geopandas as gpd
-# from geopy.geocoders import Nominatim
-# from shapely.geometry import Polygon
-
-# from schema import empty_gdf, from_geometries
-
-# _GEOLOCATOR = Nominatim(user_agent="queryearth_dlpk")
-
-
-# def geocode(target: str) -> gpd.GeoDataFrame:
-#     """Resolve a place name to its bounding box, returned as a single-row
-#     GeoDataFrame in the standard pipeline schema."""
-#     if not target:
-#         return empty_gdf()
-
-#     try:
-#         location = _GEOLOCATOR.geocode(target, timeout=10)
-#     except Exception as e:
-#         print(f"Geocoding failed for '{target}': {e}")
-#         return empty_gdf()
-
-#     if location is None or "boundingbox" not in location.raw:
-#         print(f"No bounding box found for '{target}'.")
-#         return empty_gdf()
-
-#     lat_min, lat_max, lon_min, lon_max = map(float, location.raw["boundingbox"])
-#     polygon = Polygon(
-#         [
-#             (lon_min, lat_min),
-#             (lon_max, lat_min),
-#             (lon_max, lat_max),
-#             (lon_min, lat_max),
-#         ]
-#     )
-#     return from_geometries([polygon])
 import geopandas as gpd
 import requests
+from shapely import wkb
 from shapely.geometry import Polygon, shape
 from schema import empty_gdf, from_geometries
 
@@ -51,11 +20,35 @@ from schema import empty_gdf, from_geometries
 def geocode(target: str) -> gpd.GeoDataFrame:
     """Resolve a place name to its EXACT administrative boundary polygon.
 
-    Falls back to Bounding Box if exact polygon geometry is unavailable.
+    Falls back to a bounding box if exact polygon geometry is unavailable.
+
+    Thin wrapper around the cached implementation below: GeoDataFrames
+    aren't safe to cache directly (they're mutable, and callers may mutate
+    results downstream), so the cache stores WKB bytes — immutable and
+    hashable — and this function rebuilds a fresh GeoDataFrame from those
+    bytes on every call.
     """
     if not target:
         return empty_gdf()
 
+    wkb_bytes = _geocode_cached(target.strip().lower())
+    if wkb_bytes is None:
+        return empty_gdf()
+    return from_geometries([wkb.loads(wkb_bytes)])
+
+
+@functools.lru_cache(maxsize=256)
+def _geocode_cached(cache_key: str):
+    """Does the actual network lookup, cached by normalized place name.
+    Returns WKB bytes, or None if nothing was found."""
+    poly = _geocode_uncached(cache_key)
+    return poly.wkb if poly is not None else None
+
+
+def _geocode_uncached(target: str):
+    """Runs the real Nominatim (then Esri fallback) network lookup and
+    returns a shapely geometry, or None if both fail. Never called
+    directly — always go through geocode()/_geocode_cached() above."""
     headers = {
         "User-Agent": "QueryEarthPipeline/1.0 (contact: admin@queryearth.local)"
     }
@@ -85,17 +78,13 @@ def geocode(target: str) -> gpd.GeoDataFrame:
                     "Polygon",
                     "MultiPolygon",
                 ]:
-                    poly = shape(geojson_geom)
-                    return from_geometries([poly])
+                    return shape(geojson_geom)
 
                 # If no polygon geometry, fallback to bounding box from Nominatim
                 if "boundingbox" in item:
                     # Nominatim returns [south, north, west, east]
                     s, n, w, e = map(float, item["boundingbox"])
-                    bbox_poly = Polygon(
-                        [(w, s), (e, s), (e, n), (w, n), (w, s)]
-                    )
-                    return from_geometries([bbox_poly])
+                    return Polygon([(w, s), (e, s), (e, n), (w, n), (w, s)])
 
     except Exception as e:
         print(f"Nominatim polygon lookup failed for '{target}': {e}")
@@ -115,7 +104,7 @@ def geocode(target: str) -> gpd.GeoDataFrame:
             candidates = data.get("candidates", [])
             if candidates and "extent" in candidates[0]:
                 ext = candidates[0]["extent"]
-                bbox_poly = Polygon(
+                return Polygon(
                     [
                         (ext["xmin"], ext["ymin"]),
                         (ext["xmax"], ext["ymin"]),
@@ -124,8 +113,7 @@ def geocode(target: str) -> gpd.GeoDataFrame:
                         (ext["xmin"], ext["ymin"]),
                     ]
                 )
-                return from_geometries([bbox_poly])
     except Exception as e:
         print(f"Esri bbox fallback failed for '{target}': {e}")
 
-    return empty_gdf()
+    return None

@@ -13,7 +13,7 @@ import torch
 # ------------------------------------------------------------------
 # Layout
 # ------------------------------------------------------------------
-EMBEDDINGS_DIR = rf"E:\Data\query-earth\embeddings"
+EMBEDDINGS_DIR = rf"/mnt/sdc1/susanket/embeddings"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -94,9 +94,7 @@ OSM_EMBEDDING_DIR = rf"{EMBEDDINGS_DIR}/osm"
 OSM_YEARS = ["2014", "2026"]
 OSM_DEFAULT_YEAR = "2026"
 OSM_CATEGORY_FILES = [
-    'buildings.parquet',
     'landuse.parquet',
-    'natural.parquet',
     'pois.parquet',
     'roads.parquet',
     'waterway.parquet',
@@ -106,4 +104,5 @@ OSM_CATEGORY_FILES = [
 # Search defaults
 # ------------------------------------------------------------------
 VISION_NPROBE_DEFAULT = 24  # IVF clusters probed per global (non-spatially-filtered) vision search
-MAX_RESULTS = 500  # Maximum features any single step can return
+MAX_RESULTS = 100  # Maximum features any single step can return
+AUTOMATIC_BUFFER_RADIUS = 1

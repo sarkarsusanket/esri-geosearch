@@ -28,6 +28,7 @@ from shapely.geometry.polygon import orient
 import config
 import models
 import query_parser
+import artifacts as artifacts_module
 from executor import PipelineContext, PipelineExecutor
 from turboquant_index import TurboQuantSearchIndex
 from schema import GEOMETRY_COL, SCORE_COL
@@ -106,6 +107,39 @@ class QueryEarth:
         #     result_gdf.to_file(rf"results\{query.replace(" ", "_")}\output .shp")
 
         return result_gdf
+
+    def find_with_context(self, query: str, **kwargs):
+        """Like `find()`, but also returns the display bundle needed to
+        render global context layers + per-feature "why this result?"
+        explanations, with no LLM involved in deciding what to show —
+        role/visibility is derived purely from the plan's DAG shape (see
+        artifacts.classify).
+
+        Returns:
+            (result_gdf, bundle) where `bundle` is the dict produced by
+            artifacts.build_display_bundle(): {"final", "context", "features"}.
+            Call artifacts.serialize_bundle(bundle) to get a JSON/GeoJSON-safe
+            version for a web front end.
+        """
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("QueryEarth.find_with_context expects a non-empty query string.")
+
+        begin = time.time()
+
+        plan = query_parser.parse_query(query)
+        result_gdf = self.executor.run_plan(plan)
+        result_gdf = self.clean_duplicates(result_gdf)
+
+        # executor.variables holds every step's output GeoDataFrame keyed by
+        # its DSL variable name — exactly what classify() needs, already
+        # computed, no extra work. Swap in the deduped/truncated final gdf
+        # so it's the one both returned as the FeatureSet and explained.
+        variables = dict(self.executor.variables)
+        variables[plan.final_variable] = result_gdf
+        bundle = artifacts_module.build_display_bundle(plan, variables)
+
+        print(f"Found the objects in {(time.time() - begin)} seconds.")
+        return result_gdf, bundle
 
 
 if __name__ == "__main__":

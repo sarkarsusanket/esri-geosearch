@@ -8,6 +8,7 @@ intersection, difference) can operate on the output of *any* step without
 needing to know which operation produced it.
 """
 import geopandas as gpd
+import config
 
 GEOMETRY_COL = "geometry"
 SCORE_COL = "score"
@@ -34,3 +35,23 @@ def ensure_crs(gdf: gpd.GeoDataFrame, crs: str = CRS) -> gpd.GeoDataFrame:
     if str(gdf.crs) != crs:
         return gdf.to_crs(crs)
     return gdf
+
+
+def buffer_points_if_needed(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """If any geometries in gdf are Points, buffer them by config.AUTOMATIC_BUFFER_RADIUS kilometers."""
+    if gdf is None or gdf.empty:
+        return gdf
+
+    gdf = ensure_crs(gdf)
+
+    # Check if any geometries are points
+    point_mask = gdf.geometry.type.isin(["Point", "MultiPoint"])
+    if not point_mask.any():
+        return gdf
+
+    # If all geometries are points, buffer them all
+    # If mixed, only buffer the points
+    metric = gdf.to_crs(gdf.estimate_utm_crs())
+    buffered = metric.copy()
+    buffered.loc[point_mask, GEOMETRY_COL] = metric.loc[point_mask].geometry.buffer(config.AUTOMATIC_BUFFER_RADIUS * 1000)
+    return ensure_crs(buffered.to_crs(CRS))

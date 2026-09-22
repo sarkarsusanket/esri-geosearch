@@ -9,6 +9,7 @@ a small fraction of the index (nprobe clusters for global search, or the
 region-filtered candidate rows for spatially-restricted search).
 """
 from typing import Optional
+import numpy as np
 
 import geopandas as gpd
 import asyncio
@@ -17,6 +18,7 @@ from shapely.geometry import Point
 import config
 from schema import empty_gdf, from_geometries
 from operations.threshold import compute_threshold
+
 
 GROUND=False
 
@@ -97,6 +99,12 @@ def search_vision(target: str,
 
         geometries = gpd.points_from_xy(lon, lat)
         gdf = from_geometries(geometries, scores=scores)
+
+        # # Region Masking
+        # mask = mask_region(gdf, region)
+        # if mask.any():
+        #     mask_indices = np.where(mask)[0]
+        #     gdf = gdf.iloc[mask_indices].copy().reset_index(drop=True)
 
     return gdf
 
